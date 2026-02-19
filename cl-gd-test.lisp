@@ -1,12 +1,13 @@
 ;; Had to run this in shell: export DYLD_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_LIBRARY_PATH
 ;; cl-gd quicklist Makefile needed arch changed and updated to point to homebrew local and libs. Also had to run: Make cl-gd-glue.dylib instead of just make.
 (ql:quickload :cl-gd)
+(ql:quickload :lparallel)
 ;;(cffi:load-foreign-library "/opt/homebrew/lib/libgd.dylib")
 
 ;;(asdf:oos 'asdf:load-op :cl-gd-test)
 ;;(cl-gd-test:test)
 
-(defpackage :cl-gd-example (:use :cl :cl-gd))
+(defpackage :cl-gd-example (:use :cl :cl-gd :lparallel))
 
 
 
@@ -17,6 +18,25 @@
 (defvar target-image (cl-gd:create-image-from-file target-image-name))
 (defvar width (cl-gd:image-width target-image))
 (defvar height (cl-gd:image-height target-image))
+
+;; Create 3 arrays to hold exactly the pixel data of the target image
+(defvar target-r (make-array (list (1+ width) (1+ height)) :element-type '(unsigned-byte 8)))
+(defvar target-g (make-array (list (1+ width) (1+ height)) :element-type '(unsigned-byte 8)))
+(defvar target-b (make-array (list (1+ width) (1+ height)) :element-type '(unsigned-byte 8)))
+
+;; Read the target image entirely into our fast Lisp arrays once
+(loop for w from 1 to width do
+      (loop for h from 1 to height do
+            (let ((colors (cl-gd:color-components
+                           (cl-gd:get-pixel w h :image target-image)
+                           :image target-image)))
+              (setf (aref target-r w h) (first colors))
+              (setf (aref target-g w h) (second colors))
+              (setf (aref target-b w h) (third colors)))))
+
+(defmacro fast-red (c) `(logand (ash ,c -16) 255))
+(defmacro fast-green (c) `(logand (ash ,c -8) 255))
+(defmacro fast-blue (c) `(logand ,c 255))
 
 (defvar gene-definition (list 255 255 255 ;; color
 			  255         ;; alpha
@@ -57,45 +77,58 @@
 	count (< 50 (mutate-number 50 100 100))))
 
 
-(defun mutate-gene (gene gene-def)
-  (let ((chance% 2)
-	(change% 2))
-    (loop for g in gene
-	  for gd in gene-def
-	  collect (if (< (random 100) chance%)
-		      (mutate-number g gd (round (/ (* gd change%) 100)))
-		      g))))
+(defun mutate-gene (gene gene-def rate-chance rate-change)
+  (loop for g in gene
+        for gd in gene-def
+        collect (if (< (random 100) rate-chance)
+                    ;; max 1 ensures random isn't given 0 as an argument during low-change decimals
+                    (mutate-number g gd (max 1 (round (/ (* gd rate-change) 100))))
+                    g)))
 
-(defun mutate-genome (genome gene-def)
+(defun mutate-genome (genome gene-def rate-chance rate-change)
   (loop for g in genome
-	collect (mutate-gene g gene-def)))
+        collect (mutate-gene g gene-def rate-chance rate-change)))
 
 (defun score-pixel-colors (candidate-colors target-colors)
   (loop for cc in candidate-colors 
 	for tc in target-colors
 	sum (abs (- tc cc))))
 
-(defun score-genome (genome target-image)
-  "score genome pixel by pixel against target. Lower is better match."
+(defvar *num-samples* 2000)
+(defvar sample-x (make-array *num-samples* :element-type 'fixnum))
+(defvar sample-y (make-array *num-samples* :element-type 'fixnum))
+
+(defun init-samples ()
+  (loop for i from 0 below *num-samples* do
+        (setf (aref sample-x i) (1+ (random width)))
+        (setf (aref sample-y i) (1+ (random height)))))
+
+(defun score-genome (genome)
+  "score genome using random subsampled pixels."
   (with-image*
    (width height t)
    (allocate-color 255 255 255)
    (setf (alpha-blending-p) t)
    (setf (save-alpha-p) t)
     (loop for gene in genome
-	  do
-	  (draw-polygon
-	    (last gene 6)
-	    :filled t
-	    :color (allocate-color (first gene) (second gene) (third gene) :alpha (fourth gene))))
-   (loop
-      for w from 1 to  width 
-      sum
-      (loop for h from 1 to  height
-	    sum 
-	       (score-pixel-colors
-		   (get-pixel-colors w h *default-image*)
-		   (get-pixel-colors w h target-image))))) )
+          do (draw-polygon (last gene 6) :filled t
+                           :color (allocate-color (first gene) (second gene) (third gene) :alpha (fourth gene))))
+    (let ((tr (the (simple-array (unsigned-byte 8) (* *)) target-r))
+          (tg (the (simple-array (unsigned-byte 8) (* *)) target-g))
+          (tb (the (simple-array (unsigned-byte 8) (* *)) target-b))
+          (sx (the (simple-array fixnum (*)) sample-x))
+          (sy (the (simple-array fixnum (*)) sample-y)))
+      (declare (optimize (speed 3) (safety 0)))
+      (loop for i fixnum from 0 below *num-samples*
+            for w fixnum = (aref sx i)
+            for h fixnum = (aref sy i)
+            for pixel fixnum = (cl-gd:get-pixel w h :image *default-image*)
+            for r fixnum = (fast-red pixel)
+            for g fixnum = (fast-green pixel)
+            for b fixnum = (fast-blue pixel)
+            sum (the fixnum (+ (abs (- (the fixnum (aref tr w h)) r))
+                               (abs (- (the fixnum (aref tg w h)) g))
+                               (abs (- (the fixnum (aref tb w h)) b)))) fixnum))))
 
 (loop for w from 1 to width
       sum (loop for h from 1 to height
@@ -115,21 +148,69 @@
 	      :color (allocate-color (first gene) (second gene) (third gene) :alpha (fourth gene))))
     (write-image-to-file "current-best-candidate.png" :if-exists :supersede)))
 
-(defun run ()
-  (loop
-    for x from 1 to 10000
-    do
-       (let* ((new-candidate (mutate-genome current-best-genome gene-definition))
-	      (new-candidate-score (score-genome new-candidate target-image))) 
-	 (if (< new-candidate-score current-genome-score)
-	     (progn
-	       (setf current-genome-score new-candidate-score
-		     current-best-genome  new-candidate)
-	       (write-genome-image current-best-genome)
-	       (format t "~&score: ~a iteration: ~a~%" current-genome-score x))
-	     (when (zerop (mod x 10)) (format t "."))))))
+(defun best-of-children (children)
+  (let ((best-child nil)
+        (best-score most-positive-fixnum))
+    (loop for (child score) in children
+          do (when (< score best-score)
+               (setf best-score score)
+               (setf best-child child)))
+    (values best-child best-score)))
 
-;;(run)
+(defun run (&optional (iterations 10000) (initial-chance 15) (initial-change 25) (num-threads 4))
+  ;; Initialize 4 working threads
+  (setf lparallel:*kernel* (lparallel:make-kernel num-threads))
+  (init-samples)
+  (setf current-genome-score (score-genome current-best-genome))
+  (format t "Initial score: ~A~%" current-genome-score)
+  (let ((rate-chance initial-chance)
+        (rate-change initial-change)
+        (stagnation-counter 0))
+    (unwind-protect
+        (time
+         (loop
+           for x from 1 to iterations
+           do
+              (when (zerop (mod x 50))
+                ;; Re-roll the sample points every 50 iterations to prevent overfitting
+                (init-samples)
+                (setf current-genome-score (score-genome current-best-genome)))
+                
+              ;; Generate `num-threads` children in true parallel!
+              ;; pmapcar farms the work out to the open kernel threads instantly.
+              (let* ((children-results
+                      (lparallel:pmapcar (lambda (dummy)
+                                           (declare (ignore dummy))
+                                           (let* ((child (mutate-genome current-best-genome gene-definition rate-chance rate-change))
+                                                  (score (score-genome child)))
+                                             (list child score)))
+                                         (make-list num-threads))))
+                
+                ;; Pick the best candidate out of however many the threads returned
+                (multiple-value-bind (new-candidate new-candidate-score) (best-of-children children-results)
+                  (if (< new-candidate-score current-genome-score)
+                      (progn
+                        (setf current-genome-score new-candidate-score
+                              current-best-genome  new-candidate
+                              stagnation-counter 0) ;; Reset stagnation because we found an improvement!
+                        (write-genome-image current-best-genome)
+                        (format t "~&score: ~a iter: ~a chance: ~a% change: ~a%~%" 
+                                current-genome-score x rate-chance rate-change))
+                      (progn
+                        (incf stagnation-counter)
+                        ;; If we hit 2000 failed iterations (since we have potentially 48 threads, 2000 = a lot of attempts)
+                        (when (> stagnation-counter 2000)
+                          (setf stagnation-counter 0)
+                          ;; Decay by roughly 1.5x down to a minimum of 1%
+                          (setf rate-chance (max 1 (round (/ rate-chance 1.5))))
+                          (setf rate-change (max 1 (round (/ rate-change 1.5))))
+                          (format t "~%[Stagnation: Decayed mutation chance to ~a%, change to ~a%]~%" 
+                                  rate-chance rate-change))
+                        (when (zerop (mod x 100)) (format t "."))))))))
+      ;; Always guarantee the parallel threads close nicely when the program ends/aborts
+      (lparallel:end-kernel :wait t))))
+
+;;(run 1000)
 
 
 

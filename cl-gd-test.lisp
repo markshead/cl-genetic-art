@@ -109,10 +109,9 @@
         (setf (aref sample-x i) (1+ (random width)))
         (setf (aref sample-y i) (1+ (random height)))))
 
-(defun score-genome (genome)
+(defun score-genome (genome img)
   "score genome using random subsampled pixels."
-  (with-image*
-   (width height t)
+  (let ((*default-image* img))
    (fill-image 0 0 :color (fast-allocate-color 255 255 255 0))
    (setf (alpha-blending-p) t)
    (setf (save-alpha-p) t)
@@ -167,11 +166,12 @@
   ;; Initialize 4 working threads
   (setf lparallel:*kernel* (lparallel:make-kernel num-threads))
   (init-samples)
-  (setf current-genome-score (score-genome current-best-genome))
-  (format t "Initial score: ~A~%" current-genome-score)
-  (let ((rate-chance initial-chance)
+  (let ((worker-images (loop repeat num-threads collect (create-image width height t)))
+        (rate-chance initial-chance)
         (rate-change initial-change)
         (stagnation-counter 0))
+    (setf current-genome-score (score-genome current-best-genome (first worker-images)))
+    (format t "Initial score: ~A~%" current-genome-score)
     (unwind-protect
         (time
          (loop
@@ -180,17 +180,16 @@
               (when (zerop (mod x 50))
                 ;; Re-roll the sample points every 50 iterations to prevent overfitting
                 (init-samples)
-                (setf current-genome-score (score-genome current-best-genome)))
+                (setf current-genome-score (score-genome current-best-genome (first worker-images))))
                 
               ;; Generate `num-threads` children in true parallel!
               ;; pmapcar farms the work out to the open kernel threads instantly.
               (let* ((children-results
-                      (lparallel:pmapcar (lambda (dummy)
-                                           (declare (ignore dummy))
+                      (lparallel:pmapcar (lambda (img)
                                            (let* ((child (mutate-genome current-best-genome gene-definition rate-chance rate-change))
-                                                  (score (score-genome child)))
+                                                  (score (score-genome child img)))
                                              (list child score)))
-                                         (make-list num-threads))))
+                                         worker-images)))
                 
                 ;; Pick the best candidate out of however many the threads returned
                 (multiple-value-bind (new-candidate new-candidate-score) (best-of-children children-results)
@@ -214,7 +213,9 @@
                                   rate-chance rate-change))
                         (when (zerop (mod x 100)) (format t "."))))))))
       ;; Always guarantee the parallel threads close nicely when the program ends/aborts
-      (lparallel:end-kernel :wait t))))
+      (progn
+        (lparallel:end-kernel :wait t)
+        (mapc #'destroy-image worker-images)))))
 
 ;;(run 1000)
 

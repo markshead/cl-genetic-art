@@ -38,6 +38,12 @@
 (defmacro fast-green (c) `(logand (ash ,c -8) 255))
 (defmacro fast-blue (c) `(logand ,c 255))
 
+(defmacro fast-allocate-color (r g b a)
+  `(let ((val (logior (ash ,a 24) (ash ,r 16) (ash ,g 8) ,b)))
+     (if (>= val #x80000000)
+         (- val #x100000000)
+         val)))
+
 (defvar gene-definition (list 255 255 255 ;; color
 			  255         ;; alpha
 			  width height;; point
@@ -107,12 +113,12 @@
   "score genome using random subsampled pixels."
   (with-image*
    (width height t)
-   (allocate-color 255 255 255)
+   (fill-image 0 0 :color (fast-allocate-color 255 255 255 0))
    (setf (alpha-blending-p) t)
    (setf (save-alpha-p) t)
     (loop for gene in genome
           do (draw-polygon (last gene 6) :filled t
-                           :color (allocate-color (first gene) (second gene) (third gene) :alpha (fourth gene))))
+                           :color (fast-allocate-color (first gene) (second gene) (third gene) (fourth gene))))
     (let ((tr (the (simple-array (unsigned-byte 8) (* *)) target-r))
           (tg (the (simple-array (unsigned-byte 8) (* *)) target-g))
           (tb (the (simple-array (unsigned-byte 8) (* *)) target-b))
@@ -137,7 +143,7 @@
 (defun write-genome-image (genome)
   (with-image*
       (width height t)
-    (allocate-color 255 255 255)
+    (fill-image 0 0 :color (fast-allocate-color 255 255 255 0))
     (setf (alpha-blending-p) t)
     (setf (save-alpha-p) t)
     (loop for gene in genome
@@ -145,7 +151,7 @@
 	     (draw-polygon
 	      (last gene 6)
 	      :filled t
-	      :color (allocate-color (first gene) (second gene) (third gene) :alpha (fourth gene))))
+	      :color (fast-allocate-color (first gene) (second gene) (third gene) (fourth gene))))
     (write-image-to-file "current-best-candidate.png" :if-exists :supersede)))
 
 (defun best-of-children (children)

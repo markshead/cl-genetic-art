@@ -100,17 +100,10 @@
 	for tc in target-colors
 	sum (abs (- tc cc))))
 
-(defvar *num-samples* 2000)
-(defvar sample-x (make-array *num-samples* :element-type 'fixnum))
-(defvar sample-y (make-array *num-samples* :element-type 'fixnum))
 
-(defun init-samples ()
-  (loop for i from 0 below *num-samples* do
-        (setf (aref sample-x i) (1+ (random width)))
-        (setf (aref sample-y i) (1+ (random height)))))
 
 (defun score-genome (genome img)
-  "score genome using random subsampled pixels."
+  "score genome using all pixels."
   (let ((*default-image* img))
    (fill-image 0 0 :color (fast-allocate-color 255 255 255 0))
    (setf (alpha-blending-p) t)
@@ -120,20 +113,17 @@
                            :color (fast-allocate-color (first gene) (second gene) (third gene) (fourth gene))))
     (let ((tr (the (simple-array (unsigned-byte 8) (* *)) target-r))
           (tg (the (simple-array (unsigned-byte 8) (* *)) target-g))
-          (tb (the (simple-array (unsigned-byte 8) (* *)) target-b))
-          (sx (the (simple-array fixnum (*)) sample-x))
-          (sy (the (simple-array fixnum (*)) sample-y)))
+          (tb (the (simple-array (unsigned-byte 8) (* *)) target-b)))
       (declare (optimize (speed 3) (safety 0)))
-      (loop for i fixnum from 0 below *num-samples*
-            for w fixnum = (aref sx i)
-            for h fixnum = (aref sy i)
-            for pixel fixnum = (cl-gd:get-pixel w h :image *default-image*)
-            for r fixnum = (fast-red pixel)
-            for g fixnum = (fast-green pixel)
-            for b fixnum = (fast-blue pixel)
-            sum (the fixnum (+ (abs (- (the fixnum (aref tr w h)) r))
-                               (abs (- (the fixnum (aref tg w h)) g))
-                               (abs (- (the fixnum (aref tb w h)) b)))) fixnum))))
+      (loop for w fixnum from 1 to width
+            sum (loop for h fixnum from 1 to height
+                      for pixel fixnum = (cl-gd:get-pixel w h :image *default-image*)
+                      for r fixnum = (fast-red pixel)
+                      for g fixnum = (fast-green pixel)
+                      for b fixnum = (fast-blue pixel)
+                      sum (the fixnum (+ (abs (- (the fixnum (aref tr w h)) r))
+                                         (abs (- (the fixnum (aref tg w h)) g))
+                                         (abs (- (the fixnum (aref tb w h)) b)))) fixnum) fixnum))))
 
 (loop for w from 1 to width
       sum (loop for h from 1 to height
@@ -165,7 +155,6 @@
 (defun run (&optional (iterations 10000) (initial-chance 15) (initial-change 25) (num-threads 4))
   ;; Initialize 4 working threads
   (setf lparallel:*kernel* (lparallel:make-kernel num-threads))
-  (init-samples)
   (let ((worker-images (loop repeat num-threads collect (create-image width height t)))
         (rate-chance initial-chance)
         (rate-change initial-change)
@@ -177,10 +166,7 @@
          (loop
            for x from 1 to iterations
            do
-              (when (zerop (mod x 50))
-                ;; Re-roll the sample points every 50 iterations to prevent overfitting
-                (init-samples)
-                (setf current-genome-score (score-genome current-best-genome (first worker-images))))
+
                 
               ;; Generate `num-threads` children in true parallel!
               ;; pmapcar farms the work out to the open kernel threads instantly.
@@ -276,3 +262,59 @@
  (97 117 132 96 389 95 264 103 482 431)
  (232 196 130 68 269 297 333 592 150 592) (23 145 5 126 239 465 0 78 0 592)
  (250 205 183 68 277 404 151 270 184 125))  )
+
+ (defvar 4million-parallel
+ '((103 9 57 38 0 103 33 99 470 18) (68 120 89 72 500 73 363 592 67 72)
+ (220 91 0 194 404 528 157 544 449 492) (202 231 0 116 335 317 28 80 319 322)
+ (138 190 165 0 78 385 500 511 58 215) (55 16 49 114 425 97 261 343 126 252)
+ (105 204 219 102 16 0 106 91 196 35) (219 165 9 125 500 190 29 261 10 498)
+ (106 223 27 147 311 56 188 169 426 485) (65 89 4 144 318 73 464 285 100 435)
+ (241 121 0 195 65 176 0 30 209 172) (11 222 0 54 181 140 396 110 182 543)
+ (233 255 17 213 109 592 410 277 458 46)
+ (230 53 122 129 362 149 337 254 70 592) (65 199 130 41 425 337 376 543 317 0)
+ (128 255 101 204 49 405 32 418 500 304) (19 51 37 54 446 591 313 592 19 127)
+ (46 35 19 147 0 343 500 427 138 0) (200 223 0 0 500 171 493 460 335 457)
+ (47 205 48 15 71 517 0 51 459 330) (255 186 29 60 287 592 67 174 167 367)
+ (149 255 108 0 39 463 330 443 99 220) (61 0 212 67 183 406 74 282 301 387)
+ (0 190 27 2 0 154 219 279 500 35) (6 144 11 70 410 434 171 383 44 436)
+ (69 209 162 0 256 488 148 310 500 147) (255 208 0 252 99 0 73 13 138 390)
+ (0 27 27 39 234 543 500 421 125 170) (220 0 10 125 441 292 497 395 105 379)
+ (125 0 185 232 500 204 61 322 56 511) (47 188 75 211 409 445 31 381 298 26)
+ (202 166 16 182 432 108 500 433 310 232)
+ (209 205 138 152 393 561 129 231 233 334)
+ (195 155 250 255 0 371 187 229 500 527) (24 204 0 124 490 120 0 68 217 327)
+ (153 51 68 202 25 175 128 4 257 541) (173 74 182 86 66 0 500 352 0 400)
+ (41 0 0 27 160 3 140 196 465 592) (173 165 47 21 250 232 133 222 327 294)
+ (63 178 112 41 0 0 174 592 105 0) (100 98 130 50 447 309 106 11 132 0)
+ (52 54 0 82 48 523 261 131 123 445) (119 198 126 119 278 220 476 224 0 321)
+ (178 109 88 195 271 104 447 508 353 465)
+ (163 95 160 181 29 587 284 200 248 303)
+ (115 15 88 215 331 186 274 348 419 177) (55 184 65 230 35 585 500 40 94 270)
+ (255 0 97 108 26 114 59 375 388 509) (0 141 109 58 241 507 355 0 120 70)
+ (0 103 132 132 392 214 119 163 401 236) (184 255 136 219 393 0 88 592 93 243)
+ (0 88 126 163 426 39 206 246 54 269) (196 169 116 57 430 574 181 248 234 410)
+ (69 166 230 217 61 286 133 426 254 334)
+ (200 44 255 255 112 504 107 387 97 492) (255 140 79 52 384 108 454 152 59 60)
+ (156 144 185 78 280 69 36 592 294 576) (85 81 0 6 50 0 60 287 0 70)
+ (110 10 128 164 190 248 401 505 181 409) (63 81 103 77 384 0 216 172 135 239)
+ (101 2 201 194 446 588 64 0 112 462) (140 78 116 208 237 592 53 136 419 313)
+ (70 24 255 77 500 321 444 288 212 41) (63 159 110 69 0 551 500 165 153 314)
+ (84 0 48 58 402 198 0 324 24 0) (9 10 163 68 274 0 500 387 178 264)
+ (255 87 0 143 186 301 116 339 382 426) (1 80 60 0 281 140 428 434 302 398)
+ (95 141 0 133 162 317 0 8 380 310) (0 45 37 22 35 488 374 281 337 151)
+ (128 125 121 60 81 172 307 92 258 466) (246 8 69 178 293 507 351 132 102 461)
+ (0 70 255 163 285 290 208 165 1 436) (23 0 77 15 386 258 181 417 0 7)
+ (133 166 81 139 430 467 498 310 430 515) (75 255 111 190 178 0 436 142 22 275)
+ (76 21 255 94 146 71 339 223 203 177) (0 156 78 156 0 129 212 423 375 31)
+ (139 127 91 4 317 362 417 436 46 440) (0 213 0 109 336 592 0 135 251 592)
+ (17 13 44 80 202 592 459 390 286 92) (5 70 164 136 39 530 462 124 247 52)
+ (51 192 150 21 118 309 441 87 277 557) (209 0 106 238 392 322 93 212 115 275)
+ (110 160 0 57 488 318 435 246 333 527) (62 0 86 33 302 440 217 27 108 0)
+ (33 131 155 62 151 316 80 107 226 284) (25 2 24 93 322 58 219 123 360 257)
+ (252 0 95 98 61 0 277 231 443 36) (255 164 180 236 323 263 296 221 205 487)
+ (58 231 180 0 288 392 338 480 348 188) (37 31 13 3 500 0 500 592 0 0)
+ (152 115 91 15 489 437 394 489 358 92) (184 217 168 18 217 112 0 440 349 66)
+ (54 33 54 74 36 404 364 362 361 33) (40 31 18 0 0 592 0 0 500 592)
+ (12 0 255 242 189 122 79 0 500 486) (227 233 212 231 432 592 165 547 350 62)
+ (255 206 129 199 337 592 271 196 169 592)
+ (239 211 210 183 343 62 155 177 192 368)))

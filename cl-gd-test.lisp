@@ -193,11 +193,13 @@
                                (recent-evals (* recent-batches num-threads))
                                (recent-efficiency (if (> recent-evals 0) (float (/ recent-improvements recent-evals)) 0.0)))
                           (format t "~&score: ~a iter: ~a eval: ~a eff-total: ~,4f eff-recent: ~,4f~%" 
-                                  current-genome-score x total-evals overall-efficiency recent-efficiency)))
-                      (when (zerop (mod x 100))
-                        (format t ".")
-                        (setf recent-improvements 0)
-                        (setf last-100-start-iter x)))))))
+                                  current-genome-score x total-evals overall-efficiency recent-efficiency))))
+                
+                (when (zerop (mod x 100))
+                  (format t ".")
+                  (force-output)
+                  (setf recent-improvements 0)
+                  (setf last-100-start-iter x))))))
       ;; Always guarantee the parallel threads close nicely when the program ends/aborts
       (progn
         (lparallel:end-kernel :wait t)

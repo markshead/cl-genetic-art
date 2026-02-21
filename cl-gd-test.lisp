@@ -153,7 +153,10 @@
   (setf lparallel:*kernel* (lparallel:make-kernel num-threads))
   (let ((worker-images (loop repeat num-threads collect (create-image width height t)))
         (rate-chance initial-chance)
-        (rate-change initial-change))
+        (rate-change initial-change)
+        (total-improvements 0)
+        (recent-improvements 0)
+        (last-100-start-iter 1))
     (setf current-genome-score (score-genome current-best-genome (first worker-images)))
     (format t "Initial score: ~A~%" current-genome-score)
     (unwind-protect
@@ -179,12 +182,20 @@
                 (multiple-value-bind (new-candidate new-candidate-score) (best-of-children children-results)
                   (if (< new-candidate-score current-genome-score)
                       (progn
+                        (incf total-improvements)
+                        (incf recent-improvements)
                         (setf current-genome-score new-candidate-score
                               current-best-genome  new-candidate)
                         (write-genome-image current-best-genome)
-                        (format t "~&score: ~a iter: ~a eval: ~a chance: ~a% change: ~a%~%" 
-                                current-genome-score x (* x num-threads) rate-chance rate-change))
-                      (when (zerop (mod x 100)) (format t ".")))))))
+                        (let* ((overall-efficiency (if (> x 0) (float (/ total-improvements x)) 0.0))
+                               (recent-evals (- x last-100-start-iter))
+                               (recent-efficiency (if (> recent-evals 0) (float (/ recent-improvements recent-evals)) 0.0)))
+                          (format t "~&score: ~a iter: ~a eval: ~a eff-total: ~,4f eff-recent: ~,4f~%" 
+                                  current-genome-score x (* x num-threads) overall-efficiency recent-efficiency)))
+                      (when (zerop (mod x 100))
+                        (format t ".")
+                        (setf recent-improvements 0)
+                        (setf last-100-start-iter x)))))))
       ;; Always guarantee the parallel threads close nicely when the program ends/aborts
       (progn
         (lparallel:end-kernel :wait t)

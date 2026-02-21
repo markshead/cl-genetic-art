@@ -187,13 +187,13 @@
                         (setf current-genome-score new-candidate-score
                               current-best-genome  new-candidate)
                         (write-genome-image current-best-genome)
-                        (let* ((총-evals (* x num-threads))
-                               (overall-efficiency (if (> 총-evals 0) (float (/ total-improvements 총-evals)) 0.0))
+                        (let* ((total-evals (* x num-threads))
+                               (overall-efficiency (if (> total-evals 0) (float (/ total-improvements total-evals)) 0.0))
                                (recent-batches (- x last-100-start-iter))
                                (recent-evals (* recent-batches num-threads))
                                (recent-efficiency (if (> recent-evals 0) (float (/ recent-improvements recent-evals)) 0.0)))
                           (format t "~&score: ~a iter: ~a eval: ~a eff-total: ~,4f eff-recent: ~,4f~%" 
-                                  current-genome-score x 총-evals overall-efficiency recent-efficiency)))
+                                  current-genome-score x total-evals overall-efficiency recent-efficiency)))
                       (when (zerop (mod x 100))
                         (format t ".")
                         (setf recent-improvements 0)

@@ -181,8 +181,8 @@
                               current-best-genome  new-candidate
                               stagnation-counter 0) ;; Reset stagnation because we found an improvement!
                         (write-genome-image current-best-genome)
-                        (format t "~&score: ~a eval: ~a chance: ~a% change: ~a%~%" 
-                                current-genome-score (* x num-threads) rate-chance rate-change))
+                        (format t "~&score: ~a iter: ~a eval: ~a chance: ~a% change: ~a%~%" 
+                                current-genome-score x (* x num-threads) rate-chance rate-change))
                       (progn
                         (incf stagnation-counter)
                         ;; If we hit 2000 failed iterations (since we have potentially 48 threads, 2000 = a lot of attempts)

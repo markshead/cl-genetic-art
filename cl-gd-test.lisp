@@ -153,8 +153,7 @@
   (setf lparallel:*kernel* (lparallel:make-kernel num-threads))
   (let ((worker-images (loop repeat num-threads collect (create-image width height t)))
         (rate-chance initial-chance)
-        (rate-change initial-change)
-        (stagnation-counter 0))
+        (rate-change initial-change))
     (setf current-genome-score (score-genome current-best-genome (first worker-images)))
     (format t "Initial score: ~A~%" current-genome-score)
     (unwind-protect
@@ -168,7 +167,10 @@
               ;; pmapcar farms the work out to the open kernel threads instantly.
               (let* ((children-results
                       (lparallel:pmapcar (lambda (img)
-                                           (let* ((child (mutate-genome current-best-genome gene-definition rate-chance rate-change))
+                                           (let* ((multiplier (+ 0.1 (random 2.9)))
+                                                  (local-chance (max 1 (round (* rate-chance multiplier))))
+                                                  (local-change (max 1 (round (* rate-change multiplier))))
+                                                  (child (mutate-genome current-best-genome gene-definition local-chance local-change))
                                                   (score (score-genome child img)))
                                              (list child score)))
                                          worker-images)))
@@ -178,22 +180,11 @@
                   (if (< new-candidate-score current-genome-score)
                       (progn
                         (setf current-genome-score new-candidate-score
-                              current-best-genome  new-candidate
-                              stagnation-counter 0) ;; Reset stagnation because we found an improvement!
+                              current-best-genome  new-candidate)
                         (write-genome-image current-best-genome)
                         (format t "~&score: ~a iter: ~a eval: ~a chance: ~a% change: ~a%~%" 
                                 current-genome-score x (* x num-threads) rate-chance rate-change))
-                      (progn
-                        (incf stagnation-counter)
-                        ;; If we hit 2000 failed iterations (since we have potentially 48 threads, 2000 = a lot of attempts)
-                        (when (> stagnation-counter 2000)
-                          (setf stagnation-counter 0)
-                          ;; Decay by roughly 1.5x down to a minimum of 1%
-                          (setf rate-chance (max 1 (round (/ rate-chance 1.5))))
-                          (setf rate-change (max 1 (round (/ rate-change 1.5))))
-                          (format t "~%[Stagnation: Decayed mutation chance to ~a%, change to ~a%]~%" 
-                                  rate-chance rate-change))
-                        (when (zerop (mod x 100)) (format t "."))))))))
+                      (when (zerop (mod x 100)) (format t ".")))))))
       ;; Always guarantee the parallel threads close nicely when the program ends/aborts
       (progn
         (lparallel:end-kernel :wait t)

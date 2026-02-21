@@ -117,7 +117,7 @@
       (declare (optimize (speed 3) (safety 0)))
       (loop for w fixnum from 1 to width
             sum (loop for h fixnum from 1 to height
-                      for pixel fixnum = (cl-gd:get-pixel w h :image *default-image*)
+                      for pixel fixnum = (cl-gd:get-pixel (1- w) (1- h) :image *default-image*)
                       for r fixnum = (fast-red pixel)
                       for g fixnum = (fast-green pixel)
                       for b fixnum = (fast-blue pixel)

@@ -125,10 +125,6 @@
                                          (abs (- (the fixnum (aref tg w h)) g))
                                          (abs (- (the fixnum (aref tb w h)) b)))) fixnum) fixnum))))
 
-(loop for w from 1 to width
-      sum (loop for h from 1 to height
-		sum h))
-
 (defun write-genome-image (genome)
   (with-image*
       (width height t)

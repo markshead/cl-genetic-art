@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Live monitoring dashboard for Common Lisp Genetic Art algorithm">
+    <title>Genetic Art Evolution Viewer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap');
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            max-width: 800px;
+            width: 100%;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .container:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            font-weight: 600;
+            font-size: 2.5rem;
+            margin-bottom: 5px;
+            background: -webkit-linear-gradient(#4facfe, #00f2fe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            font-weight: 300;
+            font-size: 1.1rem;
+            color: #d1d5db;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .pulse {
+            width: 10px;
+            height: 10px;
+            background-color: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            animation: pulse-green 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .image-wrapper {
+            position: relative;
+            margin: 0 auto;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0,0,0,0.2) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="10" fill="%23ffffff" opacity="0.1"/></svg>') center/cover;
+            min-height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        
+        .image-wrapper:hover {
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        #best-candidate {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            transition: opacity 0.5s ease;
+            opacity: 1;
+        }
+
+        .status-bar {
+            margin-top: 25px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 16px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            letter-spacing: 0.5px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: background 0.3s ease;
+        }
+        
+        .badge:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .target-img {
+            max-width: 100px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+            opacity: 0.8;
+            transition: all 0.3s ease;
+        }
+        
+        .target-img:hover {
+            opacity: 1;
+            transform: scale(1.1);
+            transform-origin: bottom right;
+        }
+    </style>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const img = document.getElementById("best-candidate");
+            
+            function updateImage() {
+                // Load new image in background to prevent flickering
+                const newImg = new Image();
+                newImg.onload = function() {
+                    img.src = this.src;
+                };
+                newImg.onerror = function() {
+                    console.log("Image currently being written by Lisp process...");
+                };
+                // Append cache-busting timestamp
+                newImg.src = "current-best-candidate.png?t=" + new Date().getTime();
+            }
+
+            // Check for updates every 1 second
+            setInterval(updateImage, 1000);
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Evolution Viewer</h1>
+        <div class="subtitle">
+            <div class="pulse"></div>
+            Connecting to background Lisp process...
+        </div>
+        
+        <div class="image-wrapper">
+            <img id="best-candidate" src="current-best-candidate.png" alt="Evolving Art">
+            <!-- Replace this path with your target image name if you want a reference! -->
+            <!-- <img class="target-img" src="girl-with-pearl-earring.png" alt="Target"> -->
+        </div>
+        
+        <div class="status-bar">
+            <div class="badge">Polling: 1s</div>
+            <div class="badge">Lparallel Engine</div>
+        </div>
+    </div>
+</body>
+</html>

@@ -170,9 +170,9 @@
               ;; pmapcar farms the work out to the open kernel threads instantly.
               (let* ((children-results
                       (lparallel:pmapcar (lambda (img)
-                                           (let* ((multiplier (+ 0.1 (random 2.9)))
-                                                  (local-chance (max 1 (round (* rate-chance multiplier))))
-                                                  (local-change (max 1 (round (* rate-change multiplier))))
+                                           (let* (
+                                                  (local-chance (max 1 (round (random 15))))
+                                                  (local-change (max 1 (round (random 25))))
                                                   (child (mutate-genome current-best-genome gene-definition local-chance local-change))
                                                   (score (score-genome child img)))
                                              (list child score)))

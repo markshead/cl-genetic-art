@@ -149,13 +149,14 @@
                (setf best-result result)))
     best-result))
 
-(defun run (&optional (iterations 10000) (initial-chance 15) (initial-change 25) (num-threads 4))
-  ;; Initialize 4 working threads
+(defun run (&optional (iterations 10000) (initial-chance 10) (initial-change 10) (num-threads 4))
+  ;; Initialize working threads
   (setf lparallel:*kernel* (lparallel:make-kernel num-threads))
   (let ((worker-images (loop repeat num-threads collect (create-image width height t)))
         (total-improvements 0)
         (recent-improvements 0)
-        (last-100-start-iter 1))
+        (last-100-start-iter 1)
+        (success-history nil)) ;; List of (chance change) pairs
     (setf current-genome-score (score-genome current-best-genome (first worker-images)))
     (format t "Initial score: ~A~%" current-genome-score)
     (unwind-protect
@@ -163,21 +164,28 @@
          (loop
            for x from 1 to iterations
            do
-
-                
-              ;; Generate `num-threads` children in true parallel!
-              ;; pmapcar farms the work out to the open kernel threads instantly.
-              (let* ((children-results
-                      (lparallel:pmapcar (lambda (img)
-                                           (let* (
-                                                  (local-chance (max 1 (round (random 5))))
-                                                  (local-change (max 1 (round (random 5))))
+              (let* ((history-len (length success-history))
+                     (avg-chance (when (> history-len 0)
+                                   (max 1 (round (/ (reduce #'+ success-history :key #'first) history-len)))))
+                     (avg-change (when (> history-len 0)
+                                   (max 1 (round (/ (reduce #'+ success-history :key #'second) history-len)))))
+                     ;; Generate `num-threads` children in parallel
+                     (children-results
+                      (lparallel:pmapcar (lambda (img idx)
+                                           (let* ((use-guided (and avg-chance avg-change (< idx (/ num-threads 2))))
+                                                  (local-chance (if use-guided
+                                                                    avg-chance
+                                                                    (max 1 (round (random initial-chance)))))
+                                                  (local-change (if use-guided
+                                                                    avg-change
+                                                                    (max 1 (round (random initial-change)))))
                                                   (child (mutate-genome current-best-genome gene-definition local-chance local-change))
                                                   (score (score-genome child img)))
                                              (list child score local-chance local-change)))
-                                         worker-images)))
+                                         worker-images
+                                         (loop for i from 0 below num-threads collect i))))
                 
-                ;; Pick the best candidate out of however many the threads returned
+                ;; Pick the best candidate
                 (destructuring-bind (&optional new-candidate new-candidate-score best-chance best-change) 
                     (best-of-children children-results)
                   (when (and new-candidate-score (< new-candidate-score current-genome-score))
@@ -185,6 +193,11 @@
                     (incf recent-improvements)
                     (setf current-genome-score new-candidate-score
                           current-best-genome  new-candidate)
+                    
+                    ;; Update success history
+                    (push (list best-chance best-change) success-history)
+                    (setf success-history (subseq success-history 0 (min (length success-history) 100)))
+
                     (write-genome-image current-best-genome)
                     (let* ((total-evals (* x num-threads))
                            (overall-efficiency (if (> total-evals 0) (float (/ total-improvements total-evals)) 0.0))
@@ -199,7 +212,7 @@
                   (force-output)
                   (setf recent-improvements 0)
                   (setf last-100-start-iter x))))))
-      ;; Always guarantee the parallel threads close nicely when the program ends/aborts
+      ;; Cleanup
       (progn
         (lparallel:end-kernel :wait t)
         (mapc #'destroy-image worker-images))))

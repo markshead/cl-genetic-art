@@ -171,8 +171,8 @@
               (let* ((children-results
                       (lparallel:pmapcar (lambda (img)
                                            (let* (
-                                                  (local-chance (max 1 (round (random 15))))
-                                                  (local-change (max 1 (round (random 25))))
+                                                  (local-chance (max 1 (round (random 5))))
+                                                  (local-change (max 1 (round (random 5))))
                                                   (child (mutate-genome current-best-genome gene-definition local-chance local-change))
                                                   (score (score-genome child img)))
                                              (list child score)))

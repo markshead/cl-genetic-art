@@ -140,20 +140,19 @@
     (write-image-to-file "current-best-candidate.png" :if-exists :supersede)))
 
 (defun best-of-children (children)
-  (let ((best-child nil)
+  (let ((best-result nil)
         (best-score most-positive-fixnum))
-    (loop for (child score) in children
+    (loop for result in children
+          for (child score) = result
           do (when (< score best-score)
                (setf best-score score)
-               (setf best-child child)))
-    (values best-child best-score)))
+               (setf best-result result)))
+    best-result))
 
 (defun run (&optional (iterations 10000) (initial-chance 15) (initial-change 25) (num-threads 4))
   ;; Initialize 4 working threads
   (setf lparallel:*kernel* (lparallel:make-kernel num-threads))
   (let ((worker-images (loop repeat num-threads collect (create-image width height t)))
-        (rate-chance initial-chance)
-        (rate-change initial-change)
         (total-improvements 0)
         (recent-improvements 0)
         (last-100-start-iter 1))
@@ -175,25 +174,25 @@
                                                   (local-change (max 1 (round (random 5))))
                                                   (child (mutate-genome current-best-genome gene-definition local-chance local-change))
                                                   (score (score-genome child img)))
-                                             (list child score)))
+                                             (list child score local-chance local-change)))
                                          worker-images)))
                 
                 ;; Pick the best candidate out of however many the threads returned
-                (multiple-value-bind (new-candidate new-candidate-score) (best-of-children children-results)
-                  (if (< new-candidate-score current-genome-score)
-                      (progn
-                        (incf total-improvements)
-                        (incf recent-improvements)
-                        (setf current-genome-score new-candidate-score
-                              current-best-genome  new-candidate)
-                        (write-genome-image current-best-genome)
-                        (let* ((total-evals (* x num-threads))
-                               (overall-efficiency (if (> total-evals 0) (float (/ total-improvements total-evals)) 0.0))
-                               (recent-batches (- x last-100-start-iter))
-                               (recent-evals (* recent-batches num-threads))
-                               (recent-efficiency (if (> recent-evals 0) (float (/ recent-improvements recent-evals)) 0.0)))
-                          (format t "~&score: ~a iter: ~a eval: ~a eff-total: ~,4f eff-recent: ~,4f~%" 
-                                  current-genome-score x total-evals overall-efficiency recent-efficiency))))
+                (destructuring-bind (&optional new-candidate new-candidate-score best-chance best-change) 
+                    (best-of-children children-results)
+                  (when (and new-candidate-score (< new-candidate-score current-genome-score))
+                    (incf total-improvements)
+                    (incf recent-improvements)
+                    (setf current-genome-score new-candidate-score
+                          current-best-genome  new-candidate)
+                    (write-genome-image current-best-genome)
+                    (let* ((total-evals (* x num-threads))
+                           (overall-efficiency (if (> total-evals 0) (float (/ total-improvements total-evals)) 0.0))
+                           (recent-batches (- x last-100-start-iter))
+                           (recent-evals (* recent-batches num-threads))
+                           (recent-efficiency (if (> recent-evals 0) (float (/ recent-improvements recent-evals)) 0.0)))
+                      (format t "~&score: ~a iter: ~a eval: ~a eff-total: ~,4f eff-recent: ~,4f chance: ~a change: ~a~%" 
+                              current-genome-score x total-evals overall-efficiency recent-efficiency best-chance best-change))))
                 
                 (when (zerop (mod x 100))
                   (format t ".")
@@ -203,7 +202,7 @@
       ;; Always guarantee the parallel threads close nicely when the program ends/aborts
       (progn
         (lparallel:end-kernel :wait t)
-        (mapc #'destroy-image worker-images)))))
+        (mapc #'destroy-image worker-images))))
 
 ;;(run 1000)
 
